@@ -8,10 +8,9 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	m "github.com/openshift/managed-node-metadata-operator/pkg/machine"
 	corev1 "k8s.io/api/core/v1"
-	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -28,14 +27,14 @@ type mocks struct {
 
 var _ = Describe("MachinesetController", func() {
 	var (
-		machineSet     machinev1.MachineSet
-		machine        machinev1.Machine
-		updatedMachine machinev1.Machine
-		node           v1.Node
-		updatedNode    v1.Node
+		machineSet     machinev1beta1.MachineSet
+		machine        machinev1beta1.Machine
+		updatedMachine machinev1beta1.Machine
+		node           corev1.Node
+		updatedNode    corev1.Node
 		mockObjects    *mocks
 		err            error
-		r              *ReconcileMachineSet
+		r              *MachinesetReconciler
 		ctx            context.Context
 		localObjects   []client.Object
 	)
@@ -44,7 +43,7 @@ var _ = Describe("MachinesetController", func() {
 	if err := corev1.AddToScheme(s); err != nil {
 		fmt.Printf("failed adding apis to scheme in machineset controller tests")
 	}
-	if err := machinev1.AddToScheme(s); err != nil {
+	if err := machinev1beta1.AddToScheme(s); err != nil {
 		fmt.Printf("failed adding apis to scheme in machineset controller tests")
 	}
 
@@ -61,32 +60,32 @@ var _ = Describe("MachinesetController", func() {
 		})
 
 		JustBeforeEach(func() {
-			machineSet = machinev1.MachineSet{
+			machineSet = machinev1beta1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machineset",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSetSpec{
+				Spec: machinev1beta1.MachineSetSpec{
 					Selector: metav1.LabelSelector{
 						MatchLabels: map[string]string{
 							"owner": "fake-machineset",
 						},
 					},
-					Template: machinev1.MachineTemplateSpec{
-						ObjectMeta: machinev1.ObjectMeta{
+					Template: machinev1beta1.MachineTemplateSpec{
+						ObjectMeta: machinev1beta1.ObjectMeta{
 							Labels: map[string]string{
 								"owner": "fake-machineset",
 							},
 						},
-						Spec: machinev1.MachineSpec{
-							ObjectMeta: machinev1.ObjectMeta{
+						Spec: machinev1beta1.MachineSpec{
+							ObjectMeta: machinev1beta1.ObjectMeta{
 								Labels: newLabelsInMachineSet,
 							},
 						},
 					},
 				},
 			}
-			machine = machinev1.Machine{
+			machine = machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machine",
 					Namespace: "test",
@@ -94,12 +93,12 @@ var _ = Describe("MachinesetController", func() {
 						"owner": "fake-machineset",
 					},
 				},
-				Spec: machinev1.MachineSpec{
-					ObjectMeta: machinev1.ObjectMeta{
+				Spec: machinev1beta1.MachineSpec{
+					ObjectMeta: machinev1beta1.ObjectMeta{
 						Labels: existingLabelsInMachine,
 					},
 				},
-				Status: machinev1.MachineStatus{
+				Status: machinev1beta1.MachineStatus{
 					NodeRef: &corev1.ObjectReference{
 						Name: "test-node",
 					},
@@ -111,7 +110,7 @@ var _ = Describe("MachinesetController", func() {
 				mockCtrl:       gomock.NewController(GinkgoT()),
 			}
 
-			r = &ReconcileMachineSet{
+			r = &MachinesetReconciler{
 				mockObjects.fakeKubeClient,
 				scheme.Scheme,
 				record.NewFakeRecorder(32),
@@ -170,7 +169,7 @@ var _ = Describe("MachinesetController", func() {
 				existingLabelsInMachine = map[string]string{}
 				existingAnnotationsInNode = map[string]string{}
 				existingLabelsInNode = map[string]string{"existingLabel": "existingValue"}
-				node = v1.Node{
+				node = corev1.Node{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:        "test-node",
 						Labels:      existingLabelsInNode,
@@ -195,7 +194,7 @@ var _ = Describe("MachinesetController", func() {
 			Context("When the operator added it previously in the node annotation", func() {
 				BeforeEach(func() {
 					existingAnnotationsInNode = map[string]string{"managed.openshift.com/customlabels": "existingLabel"}
-					node = v1.Node{
+					node = corev1.Node{
 						ObjectMeta: metav1.ObjectMeta{
 							Name:        "test-node",
 							Labels:      existingLabelsInNode,
@@ -221,9 +220,9 @@ var _ = Describe("MachinesetController", func() {
 
 	Describe("Updating taints in machine", func() {
 		var (
-			newTaintsInMachineSet   []v1.Taint
-			existingTaintsInMachine []v1.Taint
-			updatedTaintsInMachine  []v1.Taint
+			newTaintsInMachineSet   []corev1.Taint
+			existingTaintsInMachine []corev1.Taint
+			updatedTaintsInMachine  []corev1.Taint
 		)
 
 		BeforeEach(func() {
@@ -234,34 +233,34 @@ var _ = Describe("MachinesetController", func() {
 		})
 
 		JustBeforeEach(func() {
-			machineSet = machinev1.MachineSet{
+			machineSet = machinev1beta1.MachineSet{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machineset",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSetSpec{
-					Template: machinev1.MachineTemplateSpec{
-						Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSetSpec{
+					Template: machinev1beta1.MachineTemplateSpec{
+						Spec: machinev1beta1.MachineSpec{
 							Taints: newTaintsInMachineSet,
 						},
 					},
 				},
 			}
-			machine = machinev1.Machine{
+			machine = machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machineset",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					Taints: existingTaintsInMachine,
 				},
 			}
-			updatedMachine = machinev1.Machine{
+			updatedMachine = machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machineset",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					Taints: updatedTaintsInMachine,
 				},
 			}
@@ -271,7 +270,7 @@ var _ = Describe("MachinesetController", func() {
 				mockCtrl:       gomock.NewController(GinkgoT()),
 			}
 
-			r = &ReconcileMachineSet{
+			r = &MachinesetReconciler{
 				mockObjects.fakeKubeClient,
 				scheme.Scheme,
 				record.NewFakeRecorder(32),
@@ -285,17 +284,17 @@ var _ = Describe("MachinesetController", func() {
 		Context("When new taint is added to machineset", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachineSet = []v1.Taint{
+				newTaintsInMachineSet = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
 					},
 				}
-				existingTaintsInMachine = []v1.Taint{}
-				updatedTaintsInMachine = []v1.Taint{
+				existingTaintsInMachine = []corev1.Taint{}
+				updatedTaintsInMachine = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
 					},
@@ -312,14 +311,14 @@ var _ = Describe("MachinesetController", func() {
 		Context("When taint is deleted from machinset", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachineSet = []v1.Taint{}
-				existingTaintsInMachine = []v1.Taint{
+				newTaintsInMachineSet = []corev1.Taint{}
+				existingTaintsInMachine = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
 					}}
-				updatedTaintsInMachine = []v1.Taint{}
+				updatedTaintsInMachine = []corev1.Taint{}
 			})
 
 			It("should delete taint in machine", func() {
@@ -332,9 +331,9 @@ var _ = Describe("MachinesetController", func() {
 		Context("When no new taint is added to machineset", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachineSet = []v1.Taint{}
-				existingTaintsInMachine = []v1.Taint{}
-				updatedTaintsInMachine = []v1.Taint{}
+				newTaintsInMachineSet = []corev1.Taint{}
+				existingTaintsInMachine = []corev1.Taint{}
+				updatedTaintsInMachine = []corev1.Taint{}
 			})
 
 			It("should not change taints", func() {
@@ -351,22 +350,22 @@ var _ = Describe("MachinesetController", func() {
 			newLabelsInMachine        map[string]string
 			existingLabelsInNode      map[string]string
 			existingAnnotationsInNode map[string]string
-			node                      v1.Node
+			node                      corev1.Node
 		)
 
 		JustBeforeEach(func() {
-			machine = machinev1.Machine{
+			machine = machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machine",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSpec{
-					ObjectMeta: machinev1.ObjectMeta{
+				Spec: machinev1beta1.MachineSpec{
+					ObjectMeta: machinev1beta1.ObjectMeta{
 						Labels: newLabelsInMachine,
 					},
 				},
 			}
-			node = v1.Node{
+			node = corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:        "test-node",
 					Labels:      existingLabelsInNode,
@@ -383,7 +382,7 @@ var _ = Describe("MachinesetController", func() {
 				mockCtrl:       gomock.NewController(GinkgoT()),
 			}
 
-			r = &ReconcileMachineSet{
+			r = &MachinesetReconciler{
 				mockObjects.fakeKubeClient,
 				scheme.Scheme,
 				record.NewFakeRecorder(32),
@@ -438,9 +437,9 @@ var _ = Describe("MachinesetController", func() {
 
 	Describe("Updating taints in node", func() {
 		var (
-			newTaintsInMachine   []v1.Taint
-			existingTaintsInNode []v1.Taint
-			updatedTaintsInNode  []v1.Taint
+			newTaintsInMachine   []corev1.Taint
+			existingTaintsInNode []corev1.Taint
+			updatedTaintsInNode  []corev1.Taint
 		)
 
 		BeforeEach(func() {
@@ -450,31 +449,31 @@ var _ = Describe("MachinesetController", func() {
 			}
 		})
 		JustBeforeEach(func() {
-			machine = machinev1.Machine{
+			machine = machinev1beta1.Machine{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test machine",
 					Namespace: "test",
 				},
-				Spec: machinev1.MachineSpec{
+				Spec: machinev1beta1.MachineSpec{
 					Taints: newTaintsInMachine,
 				},
 			}
-			node = v1.Node{
+			node = corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-node",
 					Namespace: "test",
 				},
-				Spec: v1.NodeSpec{
+				Spec: corev1.NodeSpec{
 					Taints: existingTaintsInNode,
 				},
 			}
 
-			updatedNode = v1.Node{
+			updatedNode = corev1.Node{
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "test-node",
 					Namespace: "test",
 				},
-				Spec: v1.NodeSpec{
+				Spec: corev1.NodeSpec{
 					Taints: updatedTaintsInNode,
 				},
 			}
@@ -484,7 +483,7 @@ var _ = Describe("MachinesetController", func() {
 				mockCtrl:       gomock.NewController(GinkgoT()),
 			}
 
-			r = &ReconcileMachineSet{
+			r = &MachinesetReconciler{
 				mockObjects.fakeKubeClient,
 				scheme.Scheme,
 				record.NewFakeRecorder(32),
@@ -498,19 +497,44 @@ var _ = Describe("MachinesetController", func() {
 		Context("When new taint is added to machine", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachine = []v1.Taint{
+				newTaintsInMachine = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
 					},
 				}
-				existingTaintsInNode = []v1.Taint{}
-				updatedTaintsInNode = []v1.Taint{
+				existingTaintsInNode = []corev1.Taint{}
+				updatedTaintsInNode = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
+					},
+				}
+			})
+
+			It("should update taints in node", func() {
+				err = r.updateTaintsInNode(ctx, &machine, &node)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(node.Spec.Taints).To(Equal(updatedNode.Spec.Taints))
+			})
+		})
+
+		Context("When a NoSchedule taint is added to the node", func() {
+
+			BeforeEach(func() {
+				newTaintsInMachine = []corev1.Taint{}
+				existingTaintsInNode = []corev1.Taint{
+					{
+						Key:    corev1.TaintNodeUnschedulable,
+						Effect: corev1.TaintEffectNoSchedule,
+					},
+				}
+				updatedTaintsInNode = []corev1.Taint{
+					{
+						Key:    corev1.TaintNodeUnschedulable,
+						Effect: corev1.TaintEffectNoSchedule,
 					},
 				}
 			})
@@ -525,14 +549,14 @@ var _ = Describe("MachinesetController", func() {
 		Context("When taint is deleted from machinset", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachine = []v1.Taint{}
-				existingTaintsInNode = []v1.Taint{
+				newTaintsInMachine = []corev1.Taint{}
+				existingTaintsInNode = []corev1.Taint{
 					{
-						Effect: v1.TaintEffectPreferNoSchedule,
+						Effect: corev1.TaintEffectPreferNoSchedule,
 						Value:  "bar",
 						Key:    "foo",
 					}}
-				updatedTaintsInNode = []v1.Taint{}
+				updatedTaintsInNode = []corev1.Taint{}
 			})
 
 			It("should delete taint in node", func() {
@@ -545,9 +569,9 @@ var _ = Describe("MachinesetController", func() {
 		Context("When no new taint is added to machine", func() {
 
 			BeforeEach(func() {
-				newTaintsInMachine = []v1.Taint{}
-				existingTaintsInNode = []v1.Taint{}
-				updatedTaintsInNode = []v1.Taint{}
+				newTaintsInMachine = []corev1.Taint{}
+				existingTaintsInNode = []corev1.Taint{}
+				updatedTaintsInNode = []corev1.Taint{}
 
 			})
 
@@ -558,5 +582,34 @@ var _ = Describe("MachinesetController", func() {
 			})
 		})
 
+		Context("When a duplicate taint is added", func() {
+			BeforeEach(func() {
+				newTaintsInMachine = []corev1.Taint{
+					corev1.Taint{
+						Key:    "test",
+						Value:  "test",
+						Effect: "NoSchedule",
+					},
+					corev1.Taint{
+						Key:    "test",
+						Value:  "test",
+						Effect: "NoSchedule",
+					},
+				}
+				existingTaintsInNode = []corev1.Taint{}
+				updatedTaintsInNode = []corev1.Taint{
+					corev1.Taint{
+						Key:    "test",
+						Value:  "test",
+						Effect: "NoSchedule",
+					},
+				}
+			})
+			It("it should update the node, but indicate the error", func() {
+				err = r.updateTaintsInNode(ctx, &machine, &node)
+				Expect(err).To(HaveOccurred())
+				Expect(node.Spec.Taints).To(Equal(updatedNode.Spec.Taints))
+			})
+		})
 	})
 })

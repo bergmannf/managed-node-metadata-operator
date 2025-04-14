@@ -35,7 +35,7 @@ BOILERPLATE_GIT_REPO=https://github.com/openshift/boilerplate.git
 # and reapply the diff? Messy and error-prone -- and I would be
 # seriously ticked off if something went wrong and lost my in-flight
 # changes.
-if ! [ -z "$(git status --porcelain)" ]; then
+if ! [ -z "$(git status --porcelain -- ':!build/Dockerfile*')" ]; then
   echo "Can't validate boilerplate in a dirty repository. Please commit your changes and try again." >&2
   exit 1
 fi
@@ -67,12 +67,12 @@ git reset --hard FETCH_HEAD
 # close a security hole whereby the latter is overridden.
 echo "Running update"
 cd $REPO_ROOT
-BOILERPLATE_GIT_CLONE="git clone $TMPD" boilerplate/update
+BOILERPLATE_GIT_REPO="${TMPD}" boilerplate/update
 
 # Okay, if anything has changed, that's bad.
-if [[ $(git status --porcelain | wc -l) -ne 0 ]]; then
+if [[ $(git status --porcelain -- ':!build/Dockerfile*' | wc -l) -ne 0 ]]; then
   echo "Your boilerplate is dirty!" >&2
-  git status --porcelain
+  git status --porcelain -- ':!build/Dockerfile*'
   exit 1
 fi
 

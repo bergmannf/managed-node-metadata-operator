@@ -1,5 +1,5 @@
 /*
-
+Copyright 2022.
 
 Licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except in compliance with the License.
@@ -18,78 +18,59 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 
-	machinev1 "github.com/openshift/machine-api-operator/pkg/apis/machine/v1beta1"
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	m "github.com/openshift/managed-node-metadata-operator/pkg/machine"
-	v1 "k8s.io/api/core/v1"
+	"github.com/openshift/managed-node-metadata-operator/pkg/metrics"
+	corev1 "k8s.io/api/core/v1"
 	k8serr "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/klog/v2"
+	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller"
-	"sigs.k8s.io/controller-runtime/pkg/handler"
-	"sigs.k8s.io/controller-runtime/pkg/manager"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
-	"sigs.k8s.io/controller-runtime/pkg/source"
 )
 
-var (
-	controllerName = "machineset_controller"
-)
-
-// Add creates a new MachineSet Controller and adds it to the Manager with default RBAC.
-// The Manager will set fields on the Controller and Start it when the Manager is Started.
-func Add(mgr manager.Manager, opts manager.Options) error {
-	r := newReconciler(mgr)
-	return add(mgr, r)
-}
-
-// newReconciler returns a new reconcile.Reconciler.
-func newReconciler(mgr manager.Manager) *ReconcileMachineSet {
-	return &ReconcileMachineSet{Client: mgr.GetClient(), scheme: mgr.GetScheme(), recorder: mgr.GetEventRecorderFor(controllerName)}
-}
-
-// add adds a new Controller to mgr with r as the reconcile.Reconciler.
-func add(mgr manager.Manager, r reconcile.Reconciler) error {
-	// Create a new controller.
-	c, err := controller.New(controllerName, mgr, controller.Options{Reconciler: r})
-	if err != nil {
-		return err
-	}
-
-	// Watch for changes to MachineSet.
-	err = c.Watch(
-		&source.Kind{Type: &machinev1.MachineSet{}},
-		&handler.EnqueueRequestForObject{},
-	)
-	if err != nil {
-		return err
-	}
-
-	return nil
-
-}
-
-// ReconcileMachineSet reconciles a MachineSet object
-type ReconcileMachineSet struct {
+// MachinesetReconciler reconciles a Machineset object
+type MachinesetReconciler struct {
 	client.Client
-	scheme   *runtime.Scheme
-	recorder record.EventRecorder
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
-// +kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
+type DuplicateTaintError struct {
+	Message string
+}
 
-func (r *ReconcileMachineSet) Reconcile(ctx context.Context, request reconcile.Request) (reconcile.Result, error) {
+func (d DuplicateTaintError) Error() string {
+	return d.Message
+}
+
+//+kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups=machine.openshift.io,resources=machinesets/status,verbs=get;update;patch
+//+kubebuilder:rbac:groups=machine.openshift.io,resources=machines,verbs=get;list;watch;create;update;patch;delete
+//+kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;watch;update;patch
+
+// Reconcile is part of the main kubernetes reconciliation loop which aims to
+// move the current state of the cluster closer to the desired state.
+// TODO(user): Modify the Reconcile function to compare the state specified by
+// the Machineset object against the actual cluster state, and then
+// perform operations to make the cluster state reflect the state specified by
+// the user.
+//
+// For more details, check Reconcile and its Result here:
+// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.2/pkg/reconcile
+func (r *MachinesetReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+	_ = log.FromContext(ctx)
 
 	// Fetch the MachineSet instance
-	machineSet := &machinev1.MachineSet{}
-	err := r.Client.Get(ctx, request.NamespacedName, machineSet)
+	machineSet := &machinev1beta1.MachineSet{}
+	err := r.Client.Get(ctx, req.NamespacedName, machineSet)
 	if err != nil {
 		if k8serr.IsNotFound(err) {
 			// Object not found, return.  Created objects are automatically garbage collected.
@@ -103,9 +84,9 @@ func (r *ReconcileMachineSet) Reconcile(ctx context.Context, request reconcile.R
 	return r.ProcessMachineSet(ctx, machineSet)
 }
 
-func (r *ReconcileMachineSet) ProcessMachineSet(ctx context.Context, machineSet *machinev1.MachineSet) (reconcile.Result, error) {
+func (r *MachinesetReconciler) ProcessMachineSet(ctx context.Context, machineSet *machinev1beta1.MachineSet) (reconcile.Result, error) {
 	// Get machines for machineset
-	machines, err := m.GetMachinesForMachineSet(r, machineSet)
+	machines, err := m.GetMachinesForMachineSet(r.Client, machineSet)
 	if err != nil {
 		return reconcile.Result{}, err
 	}
@@ -114,9 +95,10 @@ func (r *ReconcileMachineSet) ProcessMachineSet(ctx context.Context, machineSet 
 		if machine.Status.NodeRef == nil || machine.Status.NodeRef.Name == "" {
 			continue
 		}
-		node, err := m.GetNodeForMachine(r, machine)
+		node, err := m.GetNodeForMachine(r.Client, machine)
 		if err != nil {
 			klog.Errorf("failed to fetch node for machine %s", machine.Name)
+			metrics.IncreaseNodeReconciliationFailure(machine.Name)
 			return reconcile.Result{}, err
 		}
 		expectedLabels := r.getExpectedLabels(ctx, machineSet, machine, node)
@@ -126,28 +108,36 @@ func (r *ReconcileMachineSet) ProcessMachineSet(ctx context.Context, machineSet 
 		// Update labels in machine
 		err = r.updateLabelsInMachine(ctx, machine, expectedLabels)
 		if err != nil {
+			metrics.IncreaseNodeReconciliationFailure(node.Name)
 			return reconcile.Result{}, err
 		}
 		// Update taints in machine
 		err = r.updateTaintsInMachine(ctx, machineSet, machine)
 		if err != nil {
+			metrics.IncreaseNodeReconciliationFailure(node.Name)
 			return reconcile.Result{}, err
 		}
 		//Update labels in node
 		err = r.updateLabelsInNode(ctx, node, expectedLabels)
 		if err != nil {
+			metrics.IncreaseNodeReconciliationFailure(node.Name)
 			return reconcile.Result{}, err
 		}
 		// Update taints in node
 		err = r.updateTaintsInNode(ctx, machine, node)
 		if err != nil {
+			metrics.IncreaseNodeReconciliationFailure(node.Name)
+			if derr, ok := err.(DuplicateTaintError); ok {
+				log.Log.Info("found duplicate taint on machine spec", "error", derr.Message)
+				return reconcile.Result{Requeue: false}, nil
+			}
 			return reconcile.Result{}, err
 		}
 	}
 	return reconcile.Result{}, nil
 }
 
-func (r *ReconcileMachineSet) getExpectedLabels(ctx context.Context, machineSet *machinev1.MachineSet, machine *machinev1.Machine, node *v1.Node) map[string]string {
+func (r *MachinesetReconciler) getExpectedLabels(ctx context.Context, machineSet *machinev1beta1.MachineSet, machine *machinev1beta1.Machine, node *corev1.Node) map[string]string {
 	result := machineSet.Spec.Template.Spec.Labels
 
 	currentAnnotationValue := node.Annotations["managed.openshift.com/customlabels"]
@@ -171,7 +161,7 @@ func (r *ReconcileMachineSet) getExpectedLabels(ctx context.Context, machineSet 
 	return result
 }
 
-func (r *ReconcileMachineSet) updateLabelsInMachine(ctx context.Context, m *machinev1.Machine, expectedLabels map[string]string) error {
+func (r *MachinesetReconciler) updateLabelsInMachine(ctx context.Context, m *machinev1beta1.Machine, expectedLabels map[string]string) error {
 	if reflect.DeepEqual(expectedLabels, m.Spec.Labels) {
 		return nil
 	}
@@ -184,21 +174,19 @@ func (r *ReconcileMachineSet) updateLabelsInMachine(ctx context.Context, m *mach
 	return nil
 }
 
-func (r ReconcileMachineSet) updateTaintsInMachine(ctx context.Context, machineSet *machinev1.MachineSet, m *machinev1.Machine) error {
-	// Compare labels of machineset vs machine and update them if they're not the same
-	if !reflect.DeepEqual(machineSet.Spec.Template.Spec.Taints, m.Spec.Taints) {
-		m.Spec.Taints = machineSet.Spec.Template.Spec.Taints
+// updateTaintsInMachine compares taints of machineset vs machine and updates them if they're not the same
+func (r *MachinesetReconciler) updateTaintsInMachine(ctx context.Context, machineSet *machinev1beta1.MachineSet, machine *machinev1beta1.Machine) error {
+	if !reflect.DeepEqual(machineSet.Spec.Template.Spec.Taints, machine.Spec.Taints) {
+		machine.Spec.Taints = machineSet.Spec.Template.Spec.Taints
+		if err := r.Client.Update(ctx, machine); err != nil {
+			return fmt.Errorf("failed to update taint for machine %s: %w", machine.Name, err)
+		}
 	}
 
-	err := r.Client.Update(ctx, m)
-	if err != nil {
-		klog.Errorf("failed to update taint in %s", m.Name)
-		return err
-	}
 	return nil
 }
 
-func (r *ReconcileMachineSet) updateLabelsInNode(ctx context.Context, node *v1.Node, expectedLabels map[string]string) error {
+func (r *MachinesetReconciler) updateLabelsInNode(ctx context.Context, node *corev1.Node, expectedLabels map[string]string) error {
 	// Build temp map to store current custom labels in node
 	currentNodeLabels := map[string]string{}
 	// Check node Annotations and compare with Labels to get custom labels
@@ -242,17 +230,89 @@ func (r *ReconcileMachineSet) updateLabelsInNode(ctx context.Context, node *v1.N
 	return nil
 }
 
-func (r ReconcileMachineSet) updateTaintsInNode(ctx context.Context, machine *machinev1.Machine, node *v1.Node) error {
-
-	// Compare labels of machineset vs machine and update them if they're not the same
-	if !reflect.DeepEqual(machine.Spec.Taints, node.Spec.Taints) {
-		node.Spec.Taints = machine.Spec.Taints
+// updateTaintsInNode ensures all taints on a node are expected. Expected taints on a node are any taints specified
+// on a machine as well as any other NoSchedule taints.
+func (r *MachinesetReconciler) updateTaintsInNode(ctx context.Context, machine *machinev1beta1.Machine, node *corev1.Node) error {
+	noScheduleTaint := &corev1.Taint{
+		Key:    corev1.TaintNodeUnschedulable,
+		Effect: corev1.TaintEffectNoSchedule,
 	}
 
-	err := r.Client.Update(ctx, node)
-	if err != nil {
-		klog.Errorf("failed to update taint in %s", node.Name)
-		return err
+	expectedTaints, duplicateTaintErr := CheckDuplicateTaints(machine.Spec.Taints)
+	// expectedTaints := machine.Spec.Taints
+	for _, taint := range node.Spec.Taints {
+		if taint.MatchTaint(noScheduleTaint) {
+			expectedTaints = append(expectedTaints, taint)
+		}
 	}
-	return nil
+
+	// If there are any differences between expected taints and the node taints, update them
+	toAdd, toRemove := TaintSliceDiff(expectedTaints, node.Spec.Taints)
+	if len(toAdd) > 0 || len(toRemove) > 0 {
+		node.Spec.Taints = expectedTaints
+		if err := r.Client.Update(ctx, node); err != nil {
+			return fmt.Errorf("failed to update taints for node %s: %w", node.Name, err)
+		}
+	}
+
+	return duplicateTaintErr
+}
+
+func CheckDuplicateTaints(taints []corev1.Taint) ([]corev1.Taint, error) {
+	var err error = nil
+	tmpTaints := make(map[corev1.Taint]bool, len(taints))
+	uniqueTaints := make([]corev1.Taint, 0)
+	for _, taint := range taints {
+		if _, value := tmpTaints[taint]; !value {
+			tmpTaints[taint] = true
+			uniqueTaints = append(uniqueTaints, taint)
+		} else {
+			err = DuplicateTaintError{Message: fmt.Sprintf("duplicate taint in machine spec found - will be ignored: %v", taint)}
+		}
+	}
+	return uniqueTaints, err
+}
+
+// TaintExists checks if the given taint exists in list of taints. Returns true if exists false otherwise.
+func TaintExists(taints []corev1.Taint, taintToFind *corev1.Taint) bool {
+	for _, taint := range taints {
+		if taint.MatchTaint(taintToFind) {
+			return true
+		}
+	}
+	return false
+}
+
+// TaintSliceDiff finds the difference between two taint slices and
+// returns all new and removed elements of the new slice relative to the old slice.
+// for example:
+// input: expected=[a b] actual=[a c]
+// output: taintsToAdd=[b] taintsToRemove=[c]
+func TaintSliceDiff(expected, actual []corev1.Taint) ([]*corev1.Taint, []*corev1.Taint) {
+	var (
+		taintsToAdd    []*corev1.Taint
+		taintsToRemove []*corev1.Taint
+	)
+
+	for i := range expected {
+		if !TaintExists(actual, &expected[i]) {
+			taintsToAdd = append(taintsToAdd, &expected[i])
+		}
+	}
+
+	for i := range actual {
+		if !TaintExists(expected, &actual[i]) {
+			taintsToRemove = append(taintsToRemove, &actual[i])
+		}
+	}
+
+	return taintsToAdd, taintsToRemove
+}
+
+// SetupWithManager sets up the controller with the Manager.
+func (r *MachinesetReconciler) SetupWithManager(mgr ctrl.Manager) error {
+	return ctrl.NewControllerManagedBy(mgr).
+		For(&machinev1beta1.MachineSet{}).
+		Named("machineset_controller").
+		Complete(r)
 }

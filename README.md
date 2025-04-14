@@ -17,7 +17,7 @@ This managed-node-metadata-operator will attempt to watch MachineSet objects and
 
 ```mermaid
 flowchart TD
-    A[User updates MachineSet in OCM] --> B[Hive applies changes to MachineSet on cluster]
+    A[User updates MachinePool in OCM] --> B[Hive applies changes to MachineSet on cluster]
     B --> C;
     subgraph Managed Node Metadata Operator
       C[MNMO Picks up change to MachineSet and begins reconcile] --> D[Loop through all Machines in Machineset and Sync Label/Taint changes];
@@ -37,3 +37,4 @@ Refer to the [development and testing guide](docs/development-and-testing.md) to
 ## Boilerplate
 This repository subscribes to the [openshift/golang-osd-operator](https://github.com/openshift/boilerplate/tree/master/boilerplate/openshift/golang-osd-operator) convention of [boilerplate](https://github.com/openshift/boilerplate/).
 See the [README](boilerplate/openshift/golang-osd-operator/README.md) for details about the functionality that brings in.
+
