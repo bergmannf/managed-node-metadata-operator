@@ -585,7 +585,8 @@ spec:
       optional: true
     - name: netrc
       optional: true
-  taskRunTemplate: {}
+  taskRunTemplate:
+    serviceAccountName: build-pipeline-managed-node-metadata-operator
   workspaces:
   - name: git-auth
     secret:
