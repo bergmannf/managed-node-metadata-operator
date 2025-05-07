@@ -1,4 +1,4 @@
-FROM quay.io/openshift/origin-operator-registry@sha256:0f30f6bdaf3453f0f73b81a2e3a783108d105e74d63ef8b1faf78c542fedd8f0
+FROM quay.io/openshift/origin-operator-registry@sha256:2024e2c0c4b13aa4137e8b81518ffe39ee93d3d85b75441b3785d2a947fa11bc
 
 LABEL operators.operatorframework.io.bundle.mediatype.v1=registry+v1
 LABEL operators.operatorframework.io.bundle.manifests.v1=manifests/
