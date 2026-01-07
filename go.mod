@@ -1,6 +1,6 @@
 module github.com/openshift/managed-node-metadata-operator
 
-go 1.19
+go 1.22
 
 require (
 	github.com/golang/mock v1.6.0
@@ -63,6 +63,7 @@ require (
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/multierr v1.8.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
+	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	golang.org/x/net v0.24.0 // indirect
 	golang.org/x/oauth2 v0.7.0 // indirect
 	golang.org/x/sys v0.19.0 // indirect
@@ -82,7 +83,7 @@ require (
 	k8s.io/utils v0.0.0-20230209194617-a36077c30491 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.3 // indirect
-	sigs.k8s.io/yaml v1.3.0 // indirect
+	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
 replace github.com/openshift/api => github.com/openshift/api v0.0.0-20220414050251-a83e6f8f1d50
